@@ -1,0 +1,6 @@
+naukri_profile/
+*.csv
+*.log
+seen_jobs.txt
+__pycache__/
+venv/
