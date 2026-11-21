@@ -4,39 +4,49 @@ from datetime import datetime
 from playwright.sync_api import sync_playwright
 
 # ================= CONFIGURATION =================
-NAUKRI_EMAIL = os.environ.get("NAUKRI_EMAIL")
-NAUKRI_PASSWORD = os.environ.get("NAUKRI_PASSWORD")
+NAUKRI_EMAIL = os.environ.get("NAUKRI_EMAIL", "sachinraut0110@gmail.com")
+NAUKRI_PASSWORD = os.environ.get("NAUKRI_PASSWORD", "")
 CHROME_PROFILE_DIR = "./naukri_profile"
-
-BASE_HEADLINE = "Senior AWS DevOps Engineer | 7+ Yrs Exp | AWS Certified Solutions Architect | Jenkins, GitHub Actions, Docker, Ansible, CloudFormation, Datadog, Wiz | CI/CD & Cloud Security"
+RESUME_FILE_PATH = os.path.abspath("Sachin_Raut_DevOps.pdf")
 
 def auto_login_if_needed(page):
     page.goto("https://www.naukri.com/mnjuser/profile", timeout=60000)
     time.sleep(4)
 
-    if "nlogin" in page.url.lower() or page.locator("#login_Layer").is_visible():
-        print("  -> Session expired. Logging in automatically...")
+    if "nlogin" in page.url.lower() or page.locator("#login_Layer").count() > 0:
+        print("  -> Not logged in. Attempting login...")
         if page.locator("#login_Layer").is_visible():
             page.locator("#login_Layer").click()
             time.sleep(2)
-        try:
-            page.locator("input[placeholder*='Email ID'], input[placeholder*='Username']").first.fill(NAUKRI_EMAIL)
-            page.locator("input[type='password']").first.fill(NAUKRI_PASSWORD)
-            page.locator("button[type='submit']").first.click()
-            time.sleep(6)
+
+        if NAUKRI_PASSWORD:
+            try:
+                page.locator("input[placeholder*='Email ID'], input[placeholder*='Username'], #usernameField").first.fill(NAUKRI_EMAIL)
+                page.locator("input[type='password'], #passwordField").first.fill(NAUKRI_PASSWORD)
+                page.locator("button[type='submit'], button:has-text('Login')").first.click()
+                time.sleep(6)
+            except Exception as e:
+                print(f"  [!] Auto-login fill error: {e}")
+
+        if "mnjuser/profile" not in page.url:
+            print("  >>> ACTION: Browser mein manually login complete karein (30 sec)...")
+            time.sleep(30)
             page.goto("https://www.naukri.com/mnjuser/profile", timeout=60000)
             time.sleep(4)
-        except Exception as e:
-            print(f"  [!] Login error: {e}")
 
 def update_naukri_profile():
     print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST] Starting Naukri Profile Refresh...")
     os.makedirs(CHROME_PROFILE_DIR, exist_ok=True)
 
+    if not os.path.exists(RESUME_FILE_PATH):
+        print(f"  [!] ERROR: Resume file nahi mili: {RESUME_FILE_PATH}")
+        print("  [i] Kripya 'Sachin_Raut_DevOps.pdf' ko isi folder mein rakhein.")
+        return
+
     with sync_playwright() as p:
         browser = p.chromium.launch_persistent_context(
             user_data_dir=CHROME_PROFILE_DIR,
-            headless=True,
+            headless=False,  # Testing ke liye False; AWS EC2 par push karne se pehle True kar dein
             args=["--no-sandbox", "--disable-dev-shm-usage"],
             viewport={"width": 1280, "height": 800}
         )
@@ -44,32 +54,19 @@ def update_naukri_profile():
 
         try:
             auto_login_if_needed(page)
+            print(f"  -> Profile Page Loaded: {page.url}")
+            time.sleep(3)
 
-            print("  -> Opening Resume Headline editor...")
-            edit_btn = page.locator("#lazyResumeHead .edit.icon, .resumeHeadline .edit").first
-            edit_btn.wait_for(state="visible", timeout=15000)
-            edit_btn.click()
-            time.sleep(2)
+            # Direct Resume File Input dhundh kar PDF upload karein (Bina modal khole)
+            print("  -> Uploading latest resume to trigger profile refresh...")
+            file_input = page.locator("input[type='file']").first
+            file_input.set_input_files(RESUME_FILE_PATH)
+            time.sleep(6)
 
-            textarea = page.locator("#resumeHeadlineTxt, textarea[placeholder*='Resume Headline']").first
-            textarea.wait_for(state="visible", timeout=10000)
-            current_text = textarea.input_value().strip()
-
-            if current_text.endswith("."):
-                new_text = current_text[:-1]
-            else:
-                new_text = (current_text if current_text else BASE_HEADLINE) + "."
-
-            textarea.fill(new_text)
-            time.sleep(1)
-
-            save_btn = page.locator("form[name='resumeHeadlineForm'] button[type='submit'], button:has-text('Save')").last
-            save_btn.click()
-            time.sleep(4)
-
-            print("  [+] SUCCESS: Naukri Profile successfully updated & refreshed!")
+            print("  [+] SUCCESS: Resume re-uploaded! Naukri Profile is now 'Updated Today'.")
 
         except Exception as e:
+            page.screenshot(path="debug_profile.png")
             print(f"  [!] Profile update failed: {e}")
 
         finally:
